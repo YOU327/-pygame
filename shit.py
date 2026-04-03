@@ -290,7 +290,7 @@ while True:
         keys = pygame.key.get_pressed()
         if is_update:
             if dash_cooldown > 0: dash_cooldown -= 1
-            if (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and dash_cooldown == 0:
+            if (keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]) and dash_cooldown == 0:
                 dash_timer = 8
                 dash_cooldown = 90
                 screen_shake_intensity = 3
