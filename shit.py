@@ -1,6 +1,7 @@
 import pygame
 import os
 import sys
+import math
 from random import randint
 
 
@@ -13,17 +14,20 @@ def display_score():
 
 def obstacle_movement(obstacle_list, is_update=True):
     if obstacle_list:
-        for obstacle_rect in obstacle_list:
+        for obst in obstacle_list:
+            rect, type_idx, frames, frame_idx = obst
             if is_update:
-                obstacle_rect.x -= 4
-            if obstacle_rect.bottom == 700:
-                screen.blit(bad1_surface, obstacle_rect)
-            else:
-                screen.blit(bad2_surface, obstacle_rect)
+                rect.x -= 4
+                
+                # Animate
+                obst[3] += 0.15 # frame_idx
+                if obst[3] >= len(frames): obst[3] = 0
+            
+            screen.blit(frames[int(obst[3])], rect)
 
         if is_update:
             obstacle_list = [
-                obstacle for obstacle in obstacle_list if obstacle.x > -100]
+                obs for obs in obstacle_list if obs[0].x > -200]
         return obstacle_list
     else:
         return []
@@ -32,7 +36,9 @@ def obstacle_movement(obstacle_list, is_update=True):
 def collisions(obstacles):
     global dead_obstacle_list, hit_stop_frames, screen_shake_intensity, combo_count, combo_timer, score, spawn_rate_ms
     if obstacles:
-        for obstacle_rect in obstacles:
+        for obst in obstacles[:]:
+            obstacle_rect = obst[0]
+            type_idx = obst[1]
             hit_by_effect = False
             if dash_timer > 0 and good_rec.colliderect(obstacle_rect):
                 hit_by_effect = True
@@ -42,14 +48,14 @@ def collisions(obstacles):
                     hit_by_effect = True
                     break
                     
-            if (good_rec.colliderect(obstacle_rect) and is_attacking) or hit_by_effect:
+            if (good_rec.inflate(-20, -10).colliderect(obstacle_rect.inflate(-10, -5)) and is_attacking) or hit_by_effect:
                 hit_stop_frames = 6
                 screen_shake_intensity = 5
                 combo_count += 1
                 combo_timer = 180
                 score += 10 * combo_count
                 
-                new_rate = max(300, 1000 - int(score / 200) * 100)
+                new_rate = max(250, 1000 - int(score / 500) * 100)
                 if new_rate != spawn_rate_ms:
                     spawn_rate_ms = new_rate
                     pygame.time.set_timer(obstacle_timer, spawn_rate_ms)
@@ -66,11 +72,11 @@ def collisions(obstacles):
                         'timer': randint(20, 40)
                     })
                     
-                if obstacle_rect.bottom == 700:
+                if obstacle_rect.bottom >= 700:
                     dead_obstacle_list.append([obstacle_rect, 0, randint(5, 12), randint(-15, -5)])
-                obstacle_rect_list.remove(obstacle_rect)
+                obstacle_rect_list.remove(obst)
                 return True
-            elif good_rec.colliderect(obstacle_rect):
+            elif good_rec.inflate(-30, -20).colliderect(obstacle_rect.inflate(-20, -10)) and dash_timer <= 0:
                 return False
     return True
 
@@ -112,7 +118,7 @@ def player_animation():
         else:
             good_surface = frames_to_use[int(good_attack_index)]
             # Wave effect spawn
-            if int(good_attack_index) == 3: # Frame for slash wave
+            if attack_mode == "slash" and int(good_attack_index) == 3: # Frame for slash wave
                 direction = 1 if facing_right else -1
                 spawn_x = good_rec.right - 10 if facing_right else good_rec.left + 10
                 punch_effects_list.append({'x': spawn_x, 'y': good_rec.centery, 'timer': 0, 'dir': direction})
@@ -122,12 +128,12 @@ def player_animation():
         else:
             if keys[pygame.K_d]:
                 good_index += 0.2
-                if good_index >= 9: good_index = 0
+                if good_index >= 8: good_index = 0
                 good_surface = good_walk_right[int(good_index)]
                 facing_right = True
             elif keys[pygame.K_a]:
                 good_index += 0.2
-                if good_index >= 9: good_index = 0
+                if good_index >= 8: good_index = 0
                 good_surface = good_walk_left[int(good_index)]
                 facing_right = False
             else:
@@ -239,24 +245,28 @@ def dead_obstacle_movement(dead_list, is_update=True):
         return []
 
 
-# Player Spritesheet Optimization
+# HD LPC Spritesheet Optimization (Player Folder)
 player_sheet_path = os.path.join(current_dir, "player", "SaraFullSheet.png")
 # Layout: 13 cols x 21 rows (64x64 pixels/grid)
 # LPC Standard Frame Counts: Walk=9, Strike=6, Thrust=8, Die=6
-good_walk_right = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=11, frame_count=9)
-good_walk_left = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=9, frame_count=9)
-good_strike_right = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=15, frame_count=6)
-good_strike_left = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=13, frame_count=6)
-good_thrust_down = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=6, frame_count=8)
-good_thrust_up = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=4, frame_count=8)
-good_die_frames = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=20, frame_count=6)
+good_walk_right = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=11, frame_count=9)
+good_walk_left = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=9, frame_count=9)
+good_strike_right = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=15, frame_count=6)
+good_strike_left = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=13, frame_count=6)
+good_thrust_down = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=6, frame_count=8)
+good_thrust_up = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=4, frame_count=8)
+good_die_frames = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=20, frame_count=6)
 
 good_attack_frames = good_strike_right + good_strike_left + good_thrust_down + good_thrust_up
 good_die_surface = good_die_frames[5] # Fully collapsed frame
 
+# Enemies Initialization (Original Ground/Air only)
+bad1_frames = load_animation('bad1', "YeOldyNecroGuy", (80, 100), 1, 6) # Zombie
+bad2_frames = load_animation("bad2", "32x32-bat-sprite", (70, 70), 2, 4) # Bat
+
 good_attack_index = 0
 is_attacking = False
-attack_mode = "slash" # "slash", "kick_down", "kick_up"
+attack_mode = "slash"
 good_index = 0
 good_surface = good_walk_right[good_index]
 good_rec = good_surface.get_rect(midbottom=(100, HEIGHT-90))
@@ -282,12 +292,12 @@ while True:
             if event.type == platform_timer:
                 platform_list.append(pygame.Rect(WIDTH + 50, randint(300, 550), randint(150, 300), 20))
             if event.type == obstacle_timer:
-                if randint(0, 2):
-                    obstacle_rect_list.append(bad1_surface.get_rect(
-                        midbottom=(randint(WIDTH + 100, WIDTH + 300), 700)))
-                else:
-                    obstacle_rect_list.append(bad2_surface.get_rect(
-                        midbottom=(randint(WIDTH + 100, WIDTH + 300), randint(400, 600))))
+                if randint(0, 2): # Ground Zombie
+                    rect = bad1_frames[0].get_rect(midbottom=(randint(WIDTH+100, WIDTH+300), 700))
+                    obstacle_rect_list.append([rect, 1, bad1_frames, 0])
+                else: # Flying Bat
+                    rect = bad2_frames[0].get_rect(midbottom=(randint(WIDTH+100, WIDTH+300), randint(400, 550)))
+                    obstacle_rect_list.append([rect, 2, bad2_frames, 0])
             if event.type == bad1_animation_timer:
                 if bad1_frame_index < len(bad1_frames) - 1:
                     bad1_frame_index += 1
@@ -460,11 +470,9 @@ while True:
     elif game_over_falling:
         screen.blit(background_surface, (bg_x, bg_y))
         screen.blit(background_surface, (bg_x + WIDTH, bg_y))
-        for obstacle_rect in obstacle_rect_list:
-            if obstacle_rect.bottom == 700:
-                screen.blit(bad1_surface, obstacle_rect)
-            else:
-                screen.blit(bad2_surface, obstacle_rect)
+        for obst in obstacle_rect_list:
+            rect, type_idx, frames, f_idx = obst
+            screen.blit(frames[int(f_idx)], rect)
         for dead_item in dead_obstacle_list:
             screen.blit(bad1_dead_surface, dead_item[0])
             
@@ -496,6 +504,7 @@ while True:
         platform_list.clear()
         dash_ghosts.clear()
         combo_count = 0
+        obstacle_rect_list = obstacle_movement(obstacle_rect_list, False)
 
     if screen_shake_intensity > 0:
         render_offset_x = randint(-screen_shake_intensity, screen_shake_intensity)
