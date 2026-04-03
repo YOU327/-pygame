@@ -266,7 +266,12 @@ while True:
                 good_rec.x -= 6
                 if good_rec.x < 0:
                     good_rec.x = 0
-            good_gravity += 1
+                    
+            if keys[pygame.K_e] and good_rec.bottom < HEIGHT - 90:
+                good_gravity = 0
+            else:
+                good_gravity += 1
+                
             good_rec.y += good_gravity
             if good_rec.bottom > HEIGHT - 90:
                 good_rec.bottom = HEIGHT - 90
