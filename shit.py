@@ -21,8 +21,8 @@ def obstacle_movement(obstacle_list):
             else:
                 screen.blit(bad2_surface, obstacle_rect)
 
-            obstacle_list = [
-                obstacle for obstacle in obstacle_list if obstacle.x > -100]
+        obstacle_list = [
+            obstacle for obstacle in obstacle_list if obstacle.x > -100]
         return obstacle_list
     else:
         return []
@@ -66,7 +66,7 @@ def player_animation():
                 good_rec.x = 0
         else:
             good_attack_index = 16
-            good_surface = good_walk1
+            good_surface = good_walk[0]
             good_rec.x -= 2
             if good_rec.x < 0:
                 good_rec.x = 0
@@ -89,33 +89,28 @@ background_surface = pygame.transform.scale(pygame.image.load(os.path.join(
 bg_x = 0
 bg_y = 0
 
-# bad
-bad1_frame1 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, 'bad1', "YeOldyNecroGuy1.png")), (80, 100)).convert_alpha()
-bad1_frame2 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, 'bad1', "YeOldyNecroGuy2.png")), (80, 100)).convert_alpha()
-bad1_frame3 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, 'bad1', "YeOldyNecroGuy3.png")), (80, 100)).convert_alpha()
-bad1_frame4 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, 'bad1', "YeOldyNecroGuy4.png")), (80, 100)).convert_alpha()
-bad1_frame5 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, 'bad1', "YeOldyNecroGuy5.png")), (80, 100)).convert_alpha()
-bad1_frame6 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, 'bad1', "YeOldyNecroGuy6.png")), (80, 100)).convert_alpha()
+game_over_surface = pygame.transform.scale(pygame.image.load(os.path.join(
+    current_dir, "player", "istockphoto-1307986275-612x612.jpg")), (1200, 800)).convert()
+tips_surface = test_font.render(
+    'E : attack  W : jump  A : left  D : right', False, "black")
+press_space_surface = test_font.render(
+    'Press space to restart', False, "White")
+press_space_rec = press_space_surface.get_rect(center=(600, HEIGHT-50))
 
-bad1_frames = [bad1_frame1, bad1_frame2, bad1_frame3,
-               bad1_frame4, bad1_frame5, bad1_frame6]
+def load_animation(folder, prefix, size, start=1, end=8):
+    return [
+        pygame.transform.scale(pygame.image.load(os.path.join(
+            current_dir, folder, f"{prefix}{i}.png")), size).convert_alpha()
+        for i in range(start, end + 1)
+    ]
+
+# bad
+bad1_frames = load_animation('bad1', "YeOldyNecroGuy", (80, 100), 1, 6)
 bad1_frame_index = 0
 bad1_surface = bad1_frames[bad1_frame_index]
 
 # fly
-bad2_frame2 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "bad2", "32x32-bat-sprite2.png")), (70, 70)).convert_alpha()
-bad2_frame3 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "bad2", "32x32-bat-sprite3.png")), (70, 70)).convert_alpha()
-bad2_frame4 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "bad2", "32x32-bat-sprite4.png")), (70, 70)).convert_alpha()
-bad2_frames = [bad2_frame2, bad2_frame3, bad2_frame4]
+bad2_frames = load_animation("bad2", "32x32-bat-sprite", (70, 70), 2, 4)
 bad2_frame_index = 0
 bad2_surface = bad2_frames[bad2_frame_index]
 
@@ -123,51 +118,20 @@ bad2_surface = bad2_frames[bad2_frame_index]
 obstacle_rect_list = []
 
 
-good_walk1 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet1.png")), (100, 100)).convert_alpha()
-good_walk2 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet2.png")), (100, 100)).convert_alpha()
-good_walk3 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet3.png")), (100, 100)).convert_alpha()
-good_walk4 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet4.png")), (100, 100)).convert_alpha()
-good_walk5 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet5.png")), (100, 100)).convert_alpha()
-good_walk6 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet6.png")), (100, 100)).convert_alpha()
-good_walk7 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet7.png")), (100, 100)).convert_alpha()
-good_walk8 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet8.png")), (100, 100)).convert_alpha()
-good_backward_walk1 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet_1.png")), (100, 100)).convert_alpha()
-good_backward_walk2 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet_2.png")), (100, 100)).convert_alpha()
-good_backward_walk3 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet_3.png")), (100, 100)).convert_alpha()
-good_backward_walk4 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet_4.png")), (100, 100)).convert_alpha()
-good_backward_walk5 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet_5.png")), (100, 100)).convert_alpha()
-good_backward_walk6 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet_6.png")), (100, 100)).convert_alpha()
-good_backward_walk7 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet_7.png")), (100, 100)).convert_alpha()
-good_backward_walk8 = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet_8.png")), (100, 100)).convert_alpha()
+good_walk_frames = load_animation("player", "SaraFullSheet", (100, 100), 1, 8)
+good_backward_walk_frames = load_animation("player", "SaraFullSheet_", (100, 100), 1, 8)
 
 
 good_attack = pygame.transform.scale(pygame.image.load(os.path.join(
     current_dir, "player", "SaraFullSheethit.png")), (100, 100)).convert_alpha()
 good_attack_index = 16
 
-good_walk = [good_walk1, good_walk2, good_walk3, good_walk4, good_walk5, good_walk6, good_walk7, good_walk8, good_backward_walk1, good_backward_walk2,
-             good_backward_walk3, good_backward_walk4, good_backward_walk5, good_backward_walk6, good_backward_walk7, good_backward_walk8, good_attack, good_attack, good_walk1]
+good_walk = good_walk_frames + good_backward_walk_frames + [good_attack, good_attack, good_walk_frames[0]]
 good_index = 0
 good_backward_index = 8
 good_jump = pygame.transform.scale(pygame.image.load(os.path.join(
     current_dir, "player", "SaraFullSheet_jump.png")), (100, 100)).convert_alpha()
-good_surface = good_walk[good_index] or good_walk[good_backward_index] or good_walk[good_attack_index]
+good_surface = good_walk[good_index]
 good_rec = good_surface.get_rect(midbottom=(100, HEIGHT-90))
 good_gravity = 0
 
@@ -232,22 +196,16 @@ while True:
         screen.blit(good_surface, good_rec)
         obstacle_rect_list = obstacle_movement(obstacle_rect_list)
         game_active = collisions(obstacle_rect_list)
-        tips = test_font.render(
-            f'E : attack  W : jump  A : left  D : right', False, "black")
         score = display_score()
         player_animation()
-        screen.blit(tips, (0, 0))
+        screen.blit(tips_surface, (0, 0))
     else:
         keys = pygame.key.get_pressed()
         if keys[pygame.K_SPACE]:
             game_active = True
             start_time = int(pygame.time.get_ticks() / 100)
-        screen.blit(pygame.transform.scale(pygame.image.load(os.path.join(
-            current_dir, "player", "istockphoto-1307986275-612x612.jpg")), (1200, 800)).convert(), (0, 0))
-        press_space = test_font.render(
-            f'Press space to restart', False, "White")
-        press_space_rec = press_space.get_rect(center=(600, HEIGHT-50))
-        screen.blit(press_space, press_space_rec)
+        screen.blit(game_over_surface, (0, 0))
+        screen.blit(press_space_surface, press_space_rec)
         score_message = test_font.render(f'Your score:{score}', False, "White")
         screen.blit(score_message, (495, 80))
         obstacle_rect_list.clear()
