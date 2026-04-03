@@ -119,6 +119,7 @@ hit_stop_frames = 0
 screen_shake_intensity = 0
 combo_count = 0
 combo_timer = 0
+hover_timer = 0
 window = pygame.display.set_mode((WIDTH, HEIGHT))
 screen = pygame.Surface((WIDTH, HEIGHT))
 pygame.display.set_caption("追趕跑跳碰")
@@ -258,6 +259,7 @@ while True:
         if is_update:
             if keys[pygame.K_w] and good_rec.bottom >= HEIGHT - 90:
                 good_gravity = -26
+                hover_timer = 0
             if keys[pygame.K_d]:
                 good_rec.x += 6
                 if good_rec.x > WIDTH - 5:
@@ -268,20 +270,25 @@ while True:
                     good_rec.x = 0
                     
             if keys[pygame.K_e] and good_rec.bottom < HEIGHT - 90:
-                good_gravity = 0
+                if hover_timer < 15:
+                    good_gravity = 0
+                    hover_timer += 1
+                else:
+                    good_gravity += 1
             else:
                 good_gravity += 1
                 
             good_rec.y += good_gravity
-            if good_rec.bottom > HEIGHT - 90:
+            if good_rec.bottom >= HEIGHT - 90:
                 good_rec.bottom = HEIGHT - 90
                 good_gravity = 0
+                hover_timer = 0
         screen.blit(good_surface, good_rec)
         
         for p in punch_effects_list[:]:
             if is_update:
                 p['timer'] += 1
-            if p['timer'] > 12:
+            if p['timer'] > 8:
                 if is_update:
                     punch_effects_list.remove(p)
             else:
