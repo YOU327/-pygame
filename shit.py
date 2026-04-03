@@ -76,11 +76,11 @@ def collisions(obstacles):
 
 
 def player_animation():
-    global good_surface, good_index, good_backward_index, good_attack_index
+    global good_surface, good_index, good_backward_index, good_attack_index, on_ground
     keys = pygame.key.get_pressed()
 
     if keys[pygame.K_e]:
-        if good_rec.bottom >= HEIGHT - 90:
+        if on_ground:
             good_rec.x -= 2
         old_idx = int(good_attack_index)
         good_attack_index += 0.15
@@ -95,7 +95,7 @@ def player_animation():
             good_rec.x = 0
     else:
         good_attack_index = 16
-        if good_rec.bottom < HEIGHT - 90:
+        if not on_ground:
             good_surface = good_jump
         else:
             if keys[pygame.K_d]:
@@ -129,6 +129,7 @@ combo_count = 0
 combo_timer = 0
 hover_timer = 0
 facing_right = True
+on_ground = True
 dash_timer = 0
 dash_cooldown = 0
 dash_ghosts = []
