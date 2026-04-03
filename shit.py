@@ -305,6 +305,8 @@ while True:
                 if keys[pygame.K_w] and on_ground:
                     good_gravity = -26
                     hover_timer = 0
+                elif not keys[pygame.K_w] and good_gravity < -8:
+                    good_gravity = -8
                 if keys[pygame.K_d]:
                     good_rec.x += 6
                     facing_right = True
