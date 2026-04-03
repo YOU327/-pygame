@@ -76,7 +76,7 @@ def collisions(obstacles):
 
 
 def player_animation():
-    global good_surface, good_index, good_backward_index, good_attack_index, on_ground
+    global good_surface, good_index, good_backward_index, good_attack_index, on_ground, facing_right
     keys = pygame.key.get_pressed()
 
     if keys[pygame.K_e]:
@@ -88,9 +88,12 @@ def player_animation():
             good_attack_index = 16
             
         if int(good_attack_index) == 18 and old_idx == 17:
-            punch_effects_list.append({'x': good_rec.right - 10, 'y': good_rec.centery, 'timer': 0})
+            direction = 1 if facing_right else -1
+            spawn_x = good_rec.right - 10 if facing_right else good_rec.left + 10
+            punch_effects_list.append({'x': spawn_x, 'y': good_rec.centery, 'timer': 0, 'dir': direction})
             
-        good_surface = good_walk[int(good_attack_index)]
+        surf = good_walk[int(good_attack_index)]
+        good_surface = surf if facing_right else pygame.transform.flip(surf, True, False)
         if good_rec.x < 0:
             good_rec.x = 0
     else:
@@ -292,8 +295,6 @@ while True:
                 dash_cooldown = 90
                 screen_shake_intensity = 3
                 
-            on_ground = (good_rec.bottom >= HEIGHT - 90) or any((good_rec.bottom == p.top and good_rec.colliderect(p)) for p in platform_list)
-            
             if dash_timer > 0:
                 dash_timer -= 1
                 good_rec.x += 25 if facing_right else -25
@@ -341,6 +342,7 @@ while True:
                 good_rec.bottom = HEIGHT - 90
                 good_gravity = 0
                 hover_timer = 0
+            on_ground = (good_rec.bottom >= HEIGHT - 90) or on_platform
         
         for ghost in dash_ghosts[:]:
             if is_update: ghost['timer'] -= 1
@@ -360,7 +362,17 @@ while True:
                     punch_effects_list.remove(p)
             else:
                 if is_update:
-                    p['x'] += 15
+                    p['x'] += 15 * p.get('dir', 1) - 2
+                    if randint(0, 1):
+                        particle_list.append({
+                            'x': p['x'] + randint(-10, 10),
+                            'y': p['y'] + randint(-20, 20),
+                            'vx': p.get('dir', 1) * randint(2, 6) - 2,
+                            'vy': randint(-3, 3),
+                            'size': randint(2, 6),
+                            'color': (150, 220, 255),
+                            'timer': randint(5, 12)
+                        })
                 height = 50 + p['timer'] * 4
                 width = max(2, 20 - p['timer'])
                 rect = pygame.Rect(0, 0, width, height)
