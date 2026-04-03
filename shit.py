@@ -2,519 +2,261 @@ import pygame
 import os
 import sys
 import math
-from random import randint
+from random import randint, uniform
 
+# --- Stylization ---
+GOLD, RED = (255, 215, 0), (220, 20, 20)
 
-def display_score():
-    text_surface = test_font.render(f'Score:{score}', False, "Black")
-    text_rec = text_surface.get_rect(center=(75, 60))
-    screen.blit(text_surface, text_rec)
-    return score
+def draw_shadow_text(surf, txt, font, pos, color):
+    s = font.render(txt, True, (0,0,0))
+    m = font.render(txt, True, color)
+    surf.blit(s, (pos[0]+2, pos[1]+2))
+    surf.blit(m, pos)
 
+def load_frames(folder, prefix, size, count=6):
+    return [pygame.transform.scale(pygame.image.load(os.path.join(current_dir, folder, f"{prefix}{i}.png")), size).convert_alpha() for i in range(1, count + 1)]
 
-def obstacle_movement(obstacle_list, is_update=True):
-    if obstacle_list:
-        for obst in obstacle_list:
-            rect, type_idx, frames, frame_idx = obst
-            if is_update:
-                rect.x -= 4
+# --- Systems ---
+def move_enemies(enemies):
+    if not game_active: return enemies
+    px, py = player_rec.centerx, player_rec.bottom
+    # Tsunami Swarm Logic
+    for i, e in enumerate(enemies):
+        # Individual variation to avoid "lining up"
+        speed = e['speed']
+        dx, dy = px - e['rect'].centerx, py - (e['rect'].bottom + e['off_y'])
+        dist = math.hypot(dx, dy) or 1
+        
+        # Surge movement with slight sinusoidal variation
+        e['rect'].x += (dx/dist) * speed + math.sin(pygame.time.get_ticks()*0.005 + i)*0.5
+        e['rect'].y += (dy/dist) * (speed * 0.5)
+        
+        # Stronger Dynamic Separation O(N)
+        if i > 0:
+            prev = enemies[i-1]['rect']
+            if e['rect'].colliderect(prev.inflate(10, 5)):
+                e['rect'].x += 1.5 if e['rect'].centerx > prev.centerx else -1.5
+                e['rect'].y += 1 if e['rect'].bottom > prev.bottom else -1
                 
-                # Animate
-                obst[3] += 0.15 # frame_idx
-                if obst[3] >= len(frames): obst[3] = 0
+    return [e for e in enemies if -400 < e['rect'].x < 1600]
+
+def check_hit(enemies):
+    global combo, score, spawn_ms, kill_cnt, score_cached
+    for e in enemies[:]:
+        ob = e['rect']
+        hit = False
+        on_p = abs(player_rec.bottom - ob.bottom) < 45
+        if on_p and ((is_atk and ob.colliderect(player_rec)) or (dash_timer > 0 and ob.colliderect(player_rec))):
+            hit = True
+        else:
+            for a in axes:
+                # Requested: Absolute image overlap
+                if abs(a['x'] - ob.centerx) < 65 and abs(a['y'] - ob.centery) < 65:
+                    hit = True; break
+        
+        if hit:
+            combo += 1; score += 10 * combo; kill_cnt += 1
+            global shake_v; shake_v = 8 # Add screenshake
+            dmg_pops.append({'x': ob.centerx, 'y': ob.top, 'txt': f"+{10*combo}", 't': 40, 'c': GOLD if combo > 5 else (255,255,255)})
+            score_cached = None
+            spawn_ms = max(50, 1000 - (score // 300) * 85) # Faster tsunami spawn
+            pygame.time.set_timer(EV_SPAWN, spawn_ms)
             
-            screen.blit(frames[int(obst[3])], rect)
-
-        if is_update:
-            obstacle_list = [
-                obs for obs in obstacle_list if obs[0].x > -200]
-        return obstacle_list
-    else:
-        return []
-
-
-def collisions(obstacles):
-    global dead_obstacle_list, hit_stop_frames, screen_shake_intensity, combo_count, combo_timer, score, spawn_rate_ms
-    if obstacles:
-        for obst in obstacles[:]:
-            obstacle_rect = obst[0]
-            type_idx = obst[1]
-            hit_by_effect = False
-            if dash_timer > 0 and good_rec.colliderect(obstacle_rect):
-                hit_by_effect = True
-                
-            for p in punch_effects_list:
-                if obstacle_rect.collidepoint(p['x'], p['y']):
-                    hit_by_effect = True
-                    break
-                    
-            if (good_rec.inflate(-20, -10).colliderect(obstacle_rect.inflate(-10, -5)) and is_attacking) or hit_by_effect:
-                hit_stop_frames = 6
-                screen_shake_intensity = 5
-                combo_count += 1
-                combo_timer = 180
-                score += 10 * combo_count
-                
-                new_rate = max(250, 1000 - int(score / 500) * 100)
-                if new_rate != spawn_rate_ms:
-                    spawn_rate_ms = new_rate
-                    pygame.time.set_timer(obstacle_timer, spawn_rate_ms)
-                
-                for _ in range(15):
-                    color = (randint(150, 255), 0, randint(150, 255)) if randint(0,1) else (255, 255, 255)
-                    particle_list.append({
-                        'x': obstacle_rect.centerx,
-                        'y': obstacle_rect.centery,
-                        'vx': randint(-10, 10),
-                        'vy': randint(-10, 5),
-                        'size': randint(4, 10),
-                        'color': color,
-                        'timer': randint(20, 40)
-                    })
-                    
-                if obstacle_rect.bottom >= 700:
-                    dead_obstacle_list.append([obstacle_rect, 0, randint(5, 12), randint(-15, -5)])
-                obstacle_rect_list.remove(obst)
-                return True
-            elif good_rec.inflate(-30, -20).colliderect(obstacle_rect.inflate(-20, -10)) and dash_timer <= 0:
-                return False
+            blood_layer.blit(splat_img, (ob.centerx-35, ob.bottom-15))
+            for _ in range(4): parts.append({'x':ob.centerx,'y':ob.centery,'vx':randint(-6,6),'vy':randint(-10,-4),'t':15})
+            dead_list.append([ob, 0, 12 if ob.centerx < player_rec.centerx else -12, -15])
+            enemies.remove(e)
+            return True
+        elif on_p and ob.colliderect(player_rec) and dash_timer <= 0:
+            return False
     return True
 
-
-def player_animation():
-    global good_surface, good_index, good_attack_index, on_ground, facing_right, is_attacking, attack_mode, good_gravity
-    keys = pygame.key.get_pressed()
-    mouse_click = pygame.mouse.get_pressed()[0]
-
-    # Attack Triggers
-    if not is_attacking:
-        if not on_ground and keys[pygame.K_s]:
-            is_attacking = True
-            attack_mode = "kick_down"
-            good_attack_index = 0
-            good_gravity = 15 # Dive kick momentum
-        elif mouse_click:
-            is_attacking = True
-            good_attack_index = 0
-            if keys[pygame.K_w]:
-                attack_mode = "kick_up"
-            else:
-                attack_mode = "slash"
-
-    if is_attacking:
-        good_attack_index += 0.25
-        frames_to_use = []
-        if attack_mode == "slash":
-            frames_to_use = good_strike_right if facing_right else good_strike_left
-        elif attack_mode == "kick_down":
-            frames_to_use = good_thrust_down
-        elif attack_mode == "kick_up":
-            frames_to_use = good_thrust_up
-
-        if good_attack_index >= len(frames_to_use):
-            is_attacking = False
-            good_attack_index = 0
-            good_surface = good_walk_right[0] if facing_right else good_walk_left[0]
-        else:
-            good_surface = frames_to_use[int(good_attack_index)]
-            # Wave effect spawn
-            if attack_mode == "slash" and int(good_attack_index) == 3: # Frame for slash wave
-                direction = 1 if facing_right else -1
-                spawn_x = good_rec.right - 10 if facing_right else good_rec.left + 10
-                punch_effects_list.append({'x': spawn_x, 'y': good_rec.centery, 'timer': 0, 'dir': direction})
-    else:
-        if not on_ground:
-            good_surface = good_walk_right[3] if facing_right else good_walk_left[3] # Jump frame
-        else:
-            if keys[pygame.K_d]:
-                good_index += 0.2
-                if good_index >= 8: good_index = 0
-                good_surface = good_walk_right[int(good_index)]
-                facing_right = True
-            elif keys[pygame.K_a]:
-                good_index += 0.2
-                if good_index >= 8: good_index = 0
-                good_surface = good_walk_left[int(good_index)]
-                facing_right = False
-            else:
-                good_surface = good_walk_right[0] if facing_right else good_walk_left[0]
-                good_rec.x -= 2
-                if good_rec.x < 0: good_rec.x = 0
-
-
+# --- Initialization ---
 pygame.init()
-
-WIDTH = 1200
-HEIGHT = 800
-game_active = True
-game_over_falling = False
-start_time = 0
-score = 0
-hit_stop_frames = 0
-screen_shake_intensity = 0
-combo_count = 0
-combo_timer = 0
-hover_timer = 0
-facing_right = True
-on_ground = True
-dash_timer = 0
-dash_cooldown = 0
-dash_ghosts = []
-spawn_rate_ms = 1000
-platform_list = []
-window = pygame.display.set_mode((WIDTH, HEIGHT))
-screen = pygame.Surface((WIDTH, HEIGHT))
-pygame.display.set_caption("追趕跑跳碰")
-clock = pygame.time.Clock()
-test_font = pygame.font.Font(None, 50)
+WIDTH, HEIGHT = 1200, 800
+window = pygame.display.set_mode((WIDTH, HEIGHT), pygame.DOUBLEBUF | pygame.HWSURFACE)
+clock, f_heavy, f_small = pygame.time.Clock(), pygame.font.Font(None, 64), pygame.font.Font(None, 32)
 current_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-background_surface = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "Full-Background.png")), (1200, 800)).convert()
-bg_x = 0
-bg_y = 0
 
-game_over_surface = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "istockphoto-1307986275-612x612.jpg")), (1200, 800)).convert()
-tips_surface = test_font.render(
-    'E : attack  W : jump  A : left  D : right', False, "black")
-press_space_surface = test_font.render(
-    'Press space to restart', False, "White")
-press_space_rec = press_space_surface.get_rect(center=(600, HEIGHT-50))
+# Assets
+bg = pygame.transform.scale(pygame.image.load(os.path.join(current_dir,"background","Desert.png")),(WIDTH,HEIGHT)).convert()
+go_scr = pygame.transform.scale(pygame.image.load(os.path.join(current_dir,"player","istockphoto-1307986275-612x612.jpg")),(WIDTH,HEIGHT)).convert()
+def get_sheet_frames(path, r, c, size, row, count):
+    s = pygame.image.load(path).convert_alpha()
+    fw, fh = s.get_width()//c, s.get_height()//r
+    return [pygame.transform.scale(s.subsurface(pygame.Rect(i*fw, row*fh, fw, fh)), size) for i in range(count)]
 
-def load_animation(folder, prefix, size, start=1, end=8):
-    return [
-        pygame.transform.scale(pygame.image.load(os.path.join(
-            current_dir, folder, f"{prefix}{i}.png")), size).convert_alpha()
-        for i in range(start, end + 1)
-    ]
+ps = os.path.join(current_dir,"player","SaraFullSheet.png")
+walk_r, walk_l = get_sheet_frames(ps, 21, 13, (110,110), 11, 9), get_sheet_frames(ps, 21, 13, (110,110), 9, 9)
+walk_u, walk_d = get_sheet_frames(ps, 21, 13, (110,110), 8, 9), get_sheet_frames(ps, 21, 13, (110,110), 10, 9)
+atk_r, atk_l = get_sheet_frames(ps, 21, 13, (110,110), 15, 6), get_sheet_frames(ps, 21, 13, (110,110), 13, 6)
+dead_p = get_sheet_frames(ps, 21, 13, (110,110), 20, 6)[5]
 
-def get_frames_from_sheet(path, rows, cols, size, frame_count=None, row_to_get=None):
-    sheet = pygame.image.load(path).convert_alpha()
-    sheet_w, sheet_h = sheet.get_size()
-    fw, fh = sheet_w // cols, sheet_h // rows
-    frames = []
-    
-    if row_to_get is not None:
-        actual_count = frame_count if frame_count is not None else cols
-        for c in range(actual_count):
-            rect = pygame.Rect(c * fw, row_to_get * fh, fw, fh)
-            frame = sheet.subsurface(rect)
-            frames.append(pygame.transform.scale(frame, size))
-        return frames
-        
-    for i in range(frame_count):
-        row = i // cols
-        col = i % cols
-        rect = pygame.Rect(col * fw, row * fh, fw, fh)
-        frame = sheet.subsurface(rect)
-        frames.append(pygame.transform.scale(frame, size))
-    return frames
+axe_p = os.path.join(current_dir,"axe","battleaxe-sheet.png")
+axe_r = get_sheet_frames(axe_p, 1, 8, (90,90), 0, 8)
+axe_l = [pygame.transform.flip(f, True, False) for f in axe_r]
 
-# bad
-bad1_frames = load_animation('bad1', "YeOldyNecroGuy", (80, 100), 1, 6)
-bad1_frame_index = 0
-bad1_surface = bad1_frames[bad1_frame_index]
-bad1_dead_surface = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, 'bad1', "YeOldyNecroGuy7.png")), (80, 100)).convert_alpha()
+bad_base = load_frames('bad1', "YeOldyNecroGuy", (80,80), 6)
+bad_l_anim, bad_r_anim = bad_base, [pygame.transform.flip(f, True, False) for f in bad_base]
 
-# fly
-bad2_frames = load_animation("bad2", "32x32-bat-sprite", (70, 70), 2, 4)
-bad2_frame_index = 0
-bad2_surface = bad2_frames[bad2_frame_index]
+def make_flash(frames):
+    flash_list = []
+    for f in frames:
+        fc = f.copy(); fc.fill((255, 255, 255, 180), special_flags=pygame.BLEND_RGBA_ADD)
+        flash_list.append(fc)
+    return flash_list
 
+bad_l_flash, bad_r_flash = make_flash(bad_l_anim), make_flash(bad_r_anim)
+bad_dead_base = pygame.transform.scale(pygame.image.load(os.path.join(current_dir,'bad1',"YeOldyNecroGuy7.png")),(80,80)).convert_alpha()
+bad_dead_l, bad_dead_r = bad_dead_base, pygame.transform.flip(bad_dead_base, True, False)
+bad_dead_f_l, bad_dead_f_r = make_flash([bad_dead_l])[0], make_flash([bad_dead_r])[0]
 
-obstacle_rect_list = []
-dead_obstacle_list = []
-punch_effects_list = []
-particle_list = []
+splat_img = pygame.Surface((80, 50), pygame.SRCALPHA)
+for _ in range(12): pygame.draw.circle(splat_img, (140,0,0,160), (randint(20,60), randint(15,35)), randint(6,12))
 
-def dead_obstacle_movement(dead_list, is_update=True):
-    if dead_list:
-        for dead_item in dead_list:
-            obstacle_rect = dead_item[0]
-            if is_update:
-                obstacle_rect.x += dead_item[2]
-                obstacle_rect.y += dead_item[3]
-                dead_item[3] += 1
-                dead_item[1] += 1
-            screen.blit(bad1_dead_surface, obstacle_rect)
-        if is_update:
-            dead_list = [dead_item for dead_item in dead_list if dead_item[1] < 120 and dead_item[0].y < HEIGHT + 100]
-        return dead_list
-    else:
-        return []
+# State
+game_active, game_over_f, score, combo, kill_cnt = True, False, 0, 0, 0
+facing_r, is_atk, atk_done, dash_timer = True, False, False, 0
+g_idx, a_idx, b_idx = 0, 0, 0
+player_rec = walk_r[0].get_rect(midbottom=(600, 680))
+player_surf = walk_r[0]
+blood_layer = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+objs, dead_list, axes, parts, ghosts, dmg_pops = [], [], [], [], [], []
+score_cached, shake_v = None, 0
 
+EV_SPAWN = pygame.USEREVENT + 1; pygame.time.set_timer(EV_SPAWN, 1000)
+EV_ANIM = pygame.USEREVENT + 2; pygame.time.set_timer(EV_ANIM, 120)
 
-# HD LPC Spritesheet Optimization (Player Folder)
-player_sheet_path = os.path.join(current_dir, "player", "SaraFullSheet.png")
-# Layout: 13 cols x 21 rows (64x64 pixels/grid)
-# LPC Standard Frame Counts: Walk=9, Strike=6, Thrust=8, Die=6
-good_walk_right = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=11, frame_count=9)
-good_walk_left = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=9, frame_count=9)
-good_strike_right = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=15, frame_count=6)
-good_strike_left = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=13, frame_count=6)
-good_thrust_down = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=6, frame_count=8)
-good_thrust_up = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=4, frame_count=8)
-good_die_frames = get_frames_from_sheet(player_sheet_path, 21, 13, (120, 120), row_to_get=20, frame_count=6)
-
-good_attack_frames = good_strike_right + good_strike_left + good_thrust_down + good_thrust_up
-good_die_surface = good_die_frames[5] # Fully collapsed frame
-
-# Enemies Initialization (Original Ground/Air only)
-bad1_frames = load_animation('bad1', "YeOldyNecroGuy", (80, 100), 1, 6) # Zombie
-bad2_frames = load_animation("bad2", "32x32-bat-sprite", (70, 70), 2, 4) # Bat
-
-good_attack_index = 0
-is_attacking = False
-attack_mode = "slash"
-good_index = 0
-good_surface = good_walk_right[good_index]
-good_rec = good_surface.get_rect(midbottom=(100, HEIGHT-90))
-good_gravity = 0
-
-# timer
-obstacle_timer = pygame.USEREVENT + 1
-pygame.time.set_timer(obstacle_timer, spawn_rate_ms)
-bad1_animation_timer = pygame.USEREVENT + 2
-pygame.time.set_timer(bad1_animation_timer, 150)
-bad2_animation_timer = pygame.USEREVENT + 3
-pygame.time.set_timer(bad2_animation_timer, 100)
-platform_timer = pygame.USEREVENT + 4
-pygame.time.set_timer(platform_timer, 3500)
-
-
+# --- Main ---
 while True:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            exit()
-        if game_active:
-            if event.type == platform_timer:
-                platform_list.append(pygame.Rect(WIDTH + 50, randint(300, 550), randint(150, 300), 20))
-            if event.type == obstacle_timer:
-                if randint(0, 2): # Ground Zombie
-                    rect = bad1_frames[0].get_rect(midbottom=(randint(WIDTH+100, WIDTH+300), 700))
-                    obstacle_rect_list.append([rect, 1, bad1_frames, 0])
-                else: # Flying Bat
-                    rect = bad2_frames[0].get_rect(midbottom=(randint(WIDTH+100, WIDTH+300), randint(400, 550)))
-                    obstacle_rect_list.append([rect, 2, bad2_frames, 0])
-            if event.type == bad1_animation_timer:
-                if bad1_frame_index < len(bad1_frames) - 1:
-                    bad1_frame_index += 1
-                else:
-                    bad1_frame_index = 0
-                bad1_surface = bad1_frames[bad1_frame_index]
-            if event.type == bad2_animation_timer:
-                if bad2_frame_index < len(bad2_frames) - 1:
-                    bad2_frame_index += 1
-                else:
-                    bad2_frame_index = 0
-                bad2_surface = bad2_frames[bad2_frame_index]
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT: pygame.quit(); sys.exit()
+        if game_active and e.type == EV_SPAWN:
+            # TSUNAMI SPAWN: More monsters at once
+            for _ in range(randint(2, 6)):
+                x = -150 if randint(0,1)==0 else WIDTH+150
+                rect = bad_base[0].get_rect(midbottom=(x, randint(450, 780)))
+                objs.append({'rect': rect, 'speed': uniform(1.8, 3.5), 'off_y': randint(-30, 30)})
+        if e.type == EV_ANIM: b_idx = (b_idx + 1) % 6
 
-    if game_active == True:
-        is_update = True
-        if hit_stop_frames > 0:
-            hit_stop_frames -= 1
-            is_update = False
-            
-        if is_update:
-            if combo_timer > 0:
-                combo_timer -= 1
-                if combo_timer == 0:
-                    combo_count = 0
-            bg_x -= 2
-            if bg_x < -WIDTH:
-                bg_x = 0
-                
-        screen.blit(background_surface, (bg_x, bg_y))
-        screen.blit(background_surface, (bg_x + WIDTH, bg_y))
-        
-        for plat in platform_list[:]:
-            if is_update:
-                plat.x -= 3
-            if plat.x < -300:
-                platform_list.remove(plat)
+    if game_active:
+        k, m = pygame.key.get_pressed(), pygame.mouse.get_pressed()
+        if not is_atk and (m[0] or k[pygame.K_e]): 
+            is_atk, atk_done, a_idx = True, False, 0
+        if m[2] and dash_timer <= 0: dash_timer = 15
+
+        if is_atk:
+            a_idx += 0.6 # Faster animation (was 0.3)
+            f_pool = atk_r if facing_r else atk_l
+            if a_idx >= len(f_pool): is_atk = False; player_surf = (walk_r if facing_r else walk_l)[0]
             else:
-                pygame.draw.rect(screen, (139, 69, 19), plat)
-                pygame.draw.rect(screen, (160, 82, 45), plat, 3)
-                
-        keys = pygame.key.get_pressed()
-        if is_update:
-            if dash_cooldown > 0: dash_cooldown -= 1
-            if (keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]) and dash_cooldown == 0:
-                dash_timer = 8
-                dash_cooldown = 90
-                screen_shake_intensity = 3
-                
-            if dash_timer > 0:
-                dash_timer -= 1
-                good_rec.x += 25 if facing_right else -25
-                good_gravity = 0
-                if dash_timer % 3 == 0:
-                    dash_ghosts.append({'img': good_surface, 'rect': good_rec.copy(), 'timer': 12})
-            else:
-                if keys[pygame.K_w] and on_ground:
-                    good_gravity = -26
-                    hover_timer = 0
-                elif not keys[pygame.K_w] and good_gravity < -8:
-                    good_gravity = -8
-                if keys[pygame.K_d]:
-                    good_rec.x += 6
-                    facing_right = True
-                    if good_rec.x > WIDTH - 5: good_rec.x = WIDTH - 5
-                if keys[pygame.K_a]:
-                    good_rec.x -= 6
-                    facing_right = False
-                    if good_rec.x < 0: good_rec.x = 0
-                        
-                if keys[pygame.K_e] and not on_ground:
-                    if hover_timer < 15:
-                        good_gravity = 0
-                        hover_timer += 1
-                    else:
-                        good_gravity += 1
-                else:
-                    good_gravity += 1
-                    
-            good_rec.y += good_gravity
-            on_platform = False
-            if good_gravity > 0 and dash_timer == 0:
-                for plat in platform_list:
-                    if good_rec.colliderect(plat) and good_rec.bottom <= plat.top + 30:
-                        good_rec.bottom = plat.top + 12
-                        good_gravity = 0
-                        hover_timer = 0
-                        on_platform = True
-                        break
-                        
-            if on_platform:
-                good_rec.x -= 3
-                if good_rec.x < 0: good_rec.x = 0
-            
-            if good_rec.bottom >= HEIGHT - 90:
-                good_rec.bottom = HEIGHT - 90
-                good_gravity = 0
-                hover_timer = 0
-            on_ground = (good_rec.bottom >= HEIGHT - 90) or on_platform
+                p_frame = f_pool[::-1][int(a_idx)]
+                if int(a_idx) < 4:
+                    player_surf = p_frame.copy()
+                    axe_fr = (axe_r if facing_r else axe_l)[::-1][min(int(a_idx), 7)]
+                    hx, hy = [(45,100),(65,105),(85,90),(95,70),(85,50),(65,40)][min(int(a_idx), 5)]
+                    player_surf.blit(axe_fr, (hx-45 if facing_r else 90-hx, hy-75))
+                    if not atk_done and int(a_idx) == 3:
+                        mx, my = pygame.mouse.get_pos(); facing_r = mx >= player_rec.centerx
+                        dx, dy = mx - player_rec.centerx, my - (player_rec.centery-40); dist = math.hypot(dx, dy) or 1
+                        # Balanced 360-degree aiming velocity
+                        axes.append({'x':player_rec.centerx, 'y':player_rec.centery-40, 'vx':(dx/dist)*16, 'vy':(dy/dist)*12, 'py':player_rec.bottom, 't':0, 'ty':my})
+                        atk_done = True
+                else: player_surf = p_frame
+
+        # Movement (Always active - allows walk-and-throw)
+        mh, mv = False, False
+        if k[pygame.K_d]: player_rec.x += 4.5; facing_r, mh = True, True
+        elif k[pygame.K_a]: player_rec.x -= 4.5; facing_r, mh = False, True
+        if k[pygame.K_w]: player_rec.y -= 3; mv = True
+        elif k[pygame.K_s]: player_rec.y += 3; mv = True
         
-        for ghost in dash_ghosts[:]:
-            if is_update: ghost['timer'] -= 1
-            if ghost['timer'] <= 0: dash_ghosts.remove(ghost)
-            else:
-                ghost_surf = ghost['img'].copy()
-                ghost_surf.set_alpha(100)
-                screen.blit(ghost_surf, ghost['rect'])
-                
-        screen.blit(good_surface, good_rec)
+        # Base Walk Animation (Only if not attacking)
+        if not is_atk:
+            if mh: g_idx += 0.28; player_surf = (walk_r if facing_r else walk_l)[int(g_idx % 9)]
+            elif mv: g_idx += 0.28; player_surf = (walk_u if k[pygame.K_w] else walk_d)[int(g_idx % 9)]
+            else: player_surf = (walk_r if facing_r else walk_l)[0]
+
+        if dash_timer > 0:
+            dash_timer -= 1; player_rec.x += 28 if facing_r else -28
+            if dash_timer % 5 == 0: ghosts.append({'img':player_surf, 'r':player_rec.copy(), 't':10})
         
-        for p in punch_effects_list[:]:
-            if is_update:
-                p['timer'] += 1
-            if p['timer'] > 8:
-                if is_update:
-                    punch_effects_list.remove(p)
-            else:
-                if is_update:
-                    p['x'] += 15 * p.get('dir', 1) - 2
-                    if randint(0, 1):
-                        particle_list.append({
-                            'x': p['x'] + randint(-10, 10),
-                            'y': p['y'] + randint(-20, 20),
-                            'vx': p.get('dir', 1) * randint(2, 6) - 2,
-                            'vy': randint(-3, 3),
-                            'size': randint(2, 6),
-                            'color': (150, 220, 255),
-                            'timer': randint(5, 12)
-                        })
-                height = 50 + p['timer'] * 4
-                width = max(2, 20 - p['timer'])
-                rect = pygame.Rect(0, 0, width, height)
-                rect.center = (int(p['x']), int(p['y']))
-                pygame.draw.ellipse(screen, (220, 240, 255), rect)
-                rect.inflate_ip(-width//2, -height//3)
-                if rect.width > 0 and rect.height > 0:
-                    pygame.draw.ellipse(screen, (255, 255, 255), rect)
-                    
-        for p in particle_list[:]:
-            if is_update:
-                p['x'] += p['vx']
-                p['y'] += p['vy']
-                p['vy'] += 0.5
-                p['timer'] -= 1
-                if p['timer'] <= 0:
-                    particle_list.remove(p)
-            if p['timer'] > 0:
-                pygame.draw.rect(screen, p['color'], (int(p['x']), int(p['y']), p['size'], p['size']))
-                    
-        obstacle_rect_list = obstacle_movement(obstacle_rect_list, is_update)
-        dead_obstacle_list = dead_obstacle_movement(dead_obstacle_list, is_update)
-        if is_update:
-            game_active = collisions(obstacle_rect_list)
-            if not game_active:
-                game_over_falling = True
-                good_gravity = -15
-                screen_shake_intensity = 15
-            else:
-                score = display_score()
-                player_animation()
-        else:
-            score = display_score()
-            
-        screen.blit(tips_surface, (0, 0))
+        player_rec.x = max(20, min(player_rec.x, 1140)); player_rec.bottom = max(450, min(player_rec.bottom, 780))
+        objs = move_enemies(objs)
+        for d in dead_list: d[0].x += d[2]; d[0].y += d[3]; d[3]+=1; d[1]+=1
+        dead_list = [d for d in dead_list if d[1] < 45]
+        for a in axes[:]:
+            a['t'] += 1; a['x'] += a['vx']; a['y'] += a['vy']; a['py'] += (a['ty'] - a['py']) / 10
+            if a['t'] > 80: axes.remove(a)
+        for p in parts[:]:
+            p['x'] += p['vx']; p['y'] += p['vy']; p['vy'] += 0.8; p['t'] -= 1
+            if p['t'] <= 0: parts.remove(p)
+        for g in ghosts[:]:
+            g['t'] -= 1
+            if g['t'] <= 0: ghosts.remove(g)
+        for d in dmg_pops[:]:
+            d['y'] -= 1; d['t'] -= 1
+            if d['t'] <= 0: dmg_pops.remove(d)
+        if shake_v > 0: shake_v -= 1
         
-        if combo_count > 1:
-            combo_surf = test_font.render(f"{combo_count} COMBO!", False, (255, 50, 50))
-            combo_shake_x = randint(-2, 2) if combo_timer > 150 else 0
-            combo_shake_y = randint(-2, 2) if combo_timer > 150 else 0
-            screen.blit(combo_surf, (WIDTH - 250 + combo_shake_x, 50 + combo_shake_y))
-    elif game_over_falling:
-        screen.blit(background_surface, (bg_x, bg_y))
-        screen.blit(background_surface, (bg_x + WIDTH, bg_y))
-        for obst in obstacle_rect_list:
-            rect, type_idx, frames, f_idx = obst
-            screen.blit(frames[int(f_idx)], rect)
-        for dead_item in dead_obstacle_list:
-            screen.blit(bad1_dead_surface, dead_item[0])
-            
-        good_gravity += 1
-        good_rec.y += good_gravity
-        screen.blit(good_die_surface, good_rec)
-        score = display_score()
+        if not check_hit(objs): game_active, game_over_f, j_v = False, True, -15
+
+        # Rendering with screenshake
+        off = (randint(-shake_v,shake_v), randint(-shake_v,shake_v)) if shake_v > 0 else (0,0)
+        window.blit(bg, off)
+        window.blit(blood_layer, off)
         
-        if good_rec.top > HEIGHT:
-            game_over_falling = False
+        q = [(player_rec.bottom, player_surf, player_rec, 255)]
+        for e in objs:
+            ob = e['rect']
+            q.append((ob.bottom, (bad_r_anim if ob.centerx < player_rec.centerx else bad_l_anim)[b_idx], ob, 255))
+        for d in dead_list:
+            img = (bad_dead_r if d[2]>0 else bad_dead_l)
+            q.append((d[0].bottom, img, d[0], 255))
+        for g in ghosts: q.append((g['r'].bottom, g['img'], g['r'], int(140*(g['t']/10))))
+        
+        q.sort(key=lambda x: x[0])
+        for it in q:
+            shad_rect = pygame.Rect(0, 0, it[2].width * 0.8, 15)
+            shad_rect.center = (it[2].centerx, it[0])
+            pygame.draw.ellipse(window, (0,0,0,60), (shad_rect.x+off[0], shad_rect.y+off[1], shad_rect.width, shad_rect.height))
+            r_rect = it[2].move(off)
+            if it[3] < 255: it[1].set_alpha(it[3]); window.blit(it[1], r_rect); it[1].set_alpha(255)
+            else: window.blit(it[1], r_rect)
+
+        for a in axes:
+            fr = (axe_r if a['vx']>0 else axe_l)[(a['t']//2)%8]
+            window.blit(fr, fr.get_rect(center=(int(a['x']+off[0]), int(a['y']+off[1]))))
+        for p in parts: pygame.draw.rect(window, (180,0,0), (int(p['x']+off[0]), int(p['y']+off[1]), 4, 4))
+        
+        for d in dmg_pops:
+            alpha = min(255, d['t'] * 7)
+            s = f_small.render(d['txt'], True, d['c'])
+            s.set_alpha(alpha)
+            window.blit(s, (d['x']+off[0], d['y']+off[1]))
+        
+        if score_cached is None:
+            score_cached = pygame.Surface((WIDTH, 80), pygame.SRCALPHA); score_cached.fill((0,0,0,130))
+            draw_shadow_text(score_cached, f"SCORE: {score}", f_heavy, (30, 20), GOLD)
+            draw_shadow_text(score_cached, f"KILLS: {kill_cnt}", f_small, (WIDTH-180, 30), "White")
+            if combo > 1: draw_shadow_text(score_cached, f"{combo} COMBO", f_heavy, (WIDTH//2-100, 20), RED)
+        window.blit(score_cached, (0,0))
+
+    elif game_over_f:
+        window.blit(bg, (0,0)); j_v += 1; player_rec.y += j_v; window.blit(dead_p, player_rec)
+        if player_rec.top > HEIGHT: game_over_f = False
     else:
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_SPACE]:
-            game_active = True
-            good_rec.midbottom = (100, HEIGHT - 90)
-            good_gravity = 0
-            start_time = int(pygame.time.get_ticks() / 100)
-            score = 0
-            spawn_rate_ms = 1000
-            pygame.time.set_timer(obstacle_timer, spawn_rate_ms)
-        screen.blit(game_over_surface, (0, 0))
-        screen.blit(press_space_surface, press_space_rec)
-        score_message = test_font.render(f'Your score:{score}', False, "White")
-        screen.blit(score_message, (495, 80))
-        obstacle_rect_list.clear()
-        dead_obstacle_list.clear()
-        punch_effects_list.clear()
-        particle_list.clear()
-        platform_list.clear()
-        dash_ghosts.clear()
-        combo_count = 0
-        obstacle_rect_list = obstacle_movement(obstacle_rect_list, False)
+        if pygame.key.get_pressed()[pygame.K_SPACE]:
+            game_active, score, objs, axes, parts, dead_list, kill_cnt, combo, dmg_pops = True, 0, [], [], [], [], 0, 0, []
+            blood_layer.fill((0,0,0,0)); player_rec.midbottom = (600,680); score_cached = None
+        window.blit(go_scr, (0,0))
+        score_surf = f_heavy.render(f"FINAL SCORE: {score}", True, "White")
+        score_rect = score_surf.get_rect(center=(WIDTH//2, HEIGHT - 180))
+        instruct_surf = f_small.render("PRESS [SPACE] TO REVENGE", True, GOLD)
+        instruct_rect = instruct_surf.get_rect(center=(WIDTH//2, HEIGHT - 100))
+        window.blit(f_heavy.render(f"FINAL SCORE: {score}", True, (0,0,0)), (score_rect.x+3, score_rect.y+3))
+        window.blit(score_surf, score_rect)
+        window.blit(f_small.render("PRESS [SPACE] TO REVENGE", True, (0,0,0)), (instruct_rect.x+2, instruct_rect.y+2))
+        window.blit(instruct_surf, instruct_rect)
 
-    if screen_shake_intensity > 0:
-        render_offset_x = randint(-screen_shake_intensity, screen_shake_intensity)
-        render_offset_y = randint(-screen_shake_intensity, screen_shake_intensity)
-        screen_shake_intensity -= 1
-    else:
-        render_offset_x = 0
-        render_offset_y = 0
-
-    window.fill("Black")
-    window.blit(screen, (render_offset_x, render_offset_y))
-    pygame.display.update()
-    clock.tick(60)
+    pygame.display.flip(); clock.tick(60)
