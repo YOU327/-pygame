@@ -42,7 +42,7 @@ def collisions(obstacles):
                     hit_by_effect = True
                     break
                     
-            if (good_rec.colliderect(obstacle_rect) and good_surface in good_attack_frames) or hit_by_effect:
+            if (good_rec.colliderect(obstacle_rect) and is_attacking) or hit_by_effect:
                 hit_stop_frames = 6
                 screen_shake_intensity = 5
                 combo_count += 1
@@ -76,46 +76,64 @@ def collisions(obstacles):
 
 
 def player_animation():
-    global good_surface, good_index, good_backward_index, good_attack_index, on_ground, facing_right
+    global good_surface, good_index, good_attack_index, on_ground, facing_right, is_attacking, attack_mode, good_gravity
     keys = pygame.key.get_pressed()
+    mouse_click = pygame.mouse.get_pressed()[0]
 
-    if keys[pygame.K_e]:
-        if on_ground:
-            good_rec.x -= 2
-        old_idx = int(good_attack_index)
-        good_attack_index += 0.15
-        if good_attack_index >= 21:
-            good_attack_index = 16
-            
-        if int(good_attack_index) == 18 and old_idx == 17:
-            direction = 1 if facing_right else -1
-            spawn_x = good_rec.right - 10 if facing_right else good_rec.left + 10
-            punch_effects_list.append({'x': spawn_x, 'y': good_rec.centery, 'timer': 0, 'dir': direction})
-            
-        surf = good_walk[int(good_attack_index)]
-        good_surface = surf if facing_right else pygame.transform.flip(surf, True, False)
-        if good_rec.x < 0:
-            good_rec.x = 0
+    # Attack Triggers
+    if not is_attacking:
+        if not on_ground and keys[pygame.K_s]:
+            is_attacking = True
+            attack_mode = "kick_down"
+            good_attack_index = 0
+            good_gravity = 15 # Dive kick momentum
+        elif mouse_click:
+            is_attacking = True
+            good_attack_index = 0
+            if keys[pygame.K_w]:
+                attack_mode = "kick_up"
+            else:
+                attack_mode = "slash"
+
+    if is_attacking:
+        good_attack_index += 0.25
+        frames_to_use = []
+        if attack_mode == "slash":
+            frames_to_use = good_strike_right if facing_right else good_strike_left
+        elif attack_mode == "kick_down":
+            frames_to_use = good_thrust_down
+        elif attack_mode == "kick_up":
+            frames_to_use = good_thrust_up
+
+        if good_attack_index >= len(frames_to_use):
+            is_attacking = False
+            good_attack_index = 0
+            good_surface = good_walk_right[0] if facing_right else good_walk_left[0]
+        else:
+            good_surface = frames_to_use[int(good_attack_index)]
+            # Wave effect spawn
+            if int(good_attack_index) == 3: # Frame for slash wave
+                direction = 1 if facing_right else -1
+                spawn_x = good_rec.right - 10 if facing_right else good_rec.left + 10
+                punch_effects_list.append({'x': spawn_x, 'y': good_rec.centery, 'timer': 0, 'dir': direction})
     else:
-        good_attack_index = 16
         if not on_ground:
-            good_surface = good_jump
+            good_surface = good_walk_right[3] if facing_right else good_walk_left[3] # Jump frame
         else:
             if keys[pygame.K_d]:
                 good_index += 0.2
-                if good_index >= 7:
-                    good_index = 0
-                good_surface = good_walk[int(good_index)]
+                if good_index >= 9: good_index = 0
+                good_surface = good_walk_right[int(good_index)]
+                facing_right = True
             elif keys[pygame.K_a]:
-                good_backward_index += 0.2
-                if good_backward_index >= 16:
-                    good_backward_index = 8
-                good_surface = good_walk[int(good_backward_index)]
+                good_index += 0.2
+                if good_index >= 9: good_index = 0
+                good_surface = good_walk_left[int(good_index)]
+                facing_right = False
             else:
-                good_surface = good_walk[0]
+                good_surface = good_walk_right[0] if facing_right else good_walk_left[0]
                 good_rec.x -= 2
-                if good_rec.x < 0:
-                    good_rec.x = 0
+                if good_rec.x < 0: good_rec.x = 0
 
 
 pygame.init()
@@ -164,6 +182,28 @@ def load_animation(folder, prefix, size, start=1, end=8):
         for i in range(start, end + 1)
     ]
 
+def get_frames_from_sheet(path, rows, cols, size, frame_count=None, row_to_get=None):
+    sheet = pygame.image.load(path).convert_alpha()
+    sheet_w, sheet_h = sheet.get_size()
+    fw, fh = sheet_w // cols, sheet_h // rows
+    frames = []
+    
+    if row_to_get is not None:
+        actual_count = frame_count if frame_count is not None else cols
+        for c in range(actual_count):
+            rect = pygame.Rect(c * fw, row_to_get * fh, fw, fh)
+            frame = sheet.subsurface(rect)
+            frames.append(pygame.transform.scale(frame, size))
+        return frames
+        
+    for i in range(frame_count):
+        row = i // cols
+        col = i % cols
+        rect = pygame.Rect(col * fw, row * fh, fw, fh)
+        frame = sheet.subsurface(rect)
+        frames.append(pygame.transform.scale(frame, size))
+    return frames
+
 # bad
 bad1_frames = load_animation('bad1', "YeOldyNecroGuy", (80, 100), 1, 6)
 bad1_frame_index = 0
@@ -199,25 +239,26 @@ def dead_obstacle_movement(dead_list, is_update=True):
         return []
 
 
-good_walk_frames = load_animation("player", "SaraFullSheet", (100, 100), 1, 8)
-good_backward_walk_frames = load_animation("player", "SaraFullSheet_", (100, 100), 1, 8)
+# Player Spritesheet Optimization
+player_sheet_path = os.path.join(current_dir, "player", "SaraFullSheet.png")
+# Layout: 13 cols x 21 rows (64x64 pixels/grid)
+# LPC Standard Frame Counts: Walk=9, Strike=6, Thrust=8, Die=6
+good_walk_right = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=11, frame_count=9)
+good_walk_left = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=9, frame_count=9)
+good_strike_right = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=15, frame_count=6)
+good_strike_left = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=13, frame_count=6)
+good_thrust_down = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=6, frame_count=8)
+good_thrust_up = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=4, frame_count=8)
+good_die_frames = get_frames_from_sheet(player_sheet_path, 21, 13, (100, 100), row_to_get=20, frame_count=6)
 
+good_attack_frames = good_strike_right + good_strike_left + good_thrust_down + good_thrust_up
+good_die_surface = good_die_frames[5] # Fully collapsed frame
 
-good_attack_frames = [
-    pygame.transform.scale(pygame.image.load(os.path.join(
-        current_dir, "player", "SaraFullSheethit.png")), (100, 100)).convert_alpha()
-] + load_animation("player", "SaraFullSheethit", (100, 100), 2, 5)
-
-good_die_surface = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheetdie.png")), (100, 100)).convert_alpha()
-
-good_attack_index = 16
-good_walk = good_walk_frames + good_backward_walk_frames + good_attack_frames
+good_attack_index = 0
+is_attacking = False
+attack_mode = "slash" # "slash", "kick_down", "kick_up"
 good_index = 0
-good_backward_index = 8
-good_jump = pygame.transform.scale(pygame.image.load(os.path.join(
-    current_dir, "player", "SaraFullSheet_jump.png")), (100, 100)).convert_alpha()
-good_surface = good_walk[good_index]
+good_surface = good_walk_right[good_index]
 good_rec = good_surface.get_rect(midbottom=(100, HEIGHT-90))
 good_gravity = 0
 
