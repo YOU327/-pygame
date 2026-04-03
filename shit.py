@@ -290,8 +290,8 @@ while True:
         keys = pygame.key.get_pressed()
         if is_update:
             if dash_cooldown > 0: dash_cooldown -= 1
-            if keys[pygame.K_q] and dash_cooldown == 0:
-                dash_timer = 12
+            if (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and dash_cooldown == 0:
+                dash_timer = 8
                 dash_cooldown = 90
                 screen_shake_intensity = 3
                 
@@ -330,7 +330,7 @@ while True:
             if good_gravity > 0 and dash_timer == 0:
                 for plat in platform_list:
                     if good_rec.colliderect(plat) and good_rec.bottom <= plat.top + 30:
-                        good_rec.bottom = plat.top
+                        good_rec.bottom = plat.top + 12
                         good_gravity = 0
                         hover_timer = 0
                         on_platform = True
