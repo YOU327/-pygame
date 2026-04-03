@@ -167,7 +167,10 @@ screen = pygame.Surface((WIDTH, HEIGHT))
 pygame.display.set_caption("追趕跑跳碰")
 clock = pygame.time.Clock()
 test_font = pygame.font.Font(None, 50)
-current_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+if getattr(sys, 'frozen', False):
+    current_dir = sys._MEIPASS
+else:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
 background_surface = pygame.transform.scale(pygame.image.load(os.path.join(
     current_dir, "player", "Full-Background.png")), (1200, 800)).convert()
 bg_x = 0
